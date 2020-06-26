@@ -27,3 +27,5 @@ GitHub.sublime-settings
 # Visual Studio Code # 
 .vscode/* 
 */.vscode/*
+
+__pycache__

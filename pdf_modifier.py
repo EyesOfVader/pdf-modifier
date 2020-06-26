@@ -10,7 +10,8 @@ def read_pdf_info(file_path):
             'Author': info.author,
             'Title': info.title,
             'Page Count': pdf.getNumPages(),
-            'Subject': info.subject
+            'Subject': info.subject,
+            'File Path': file_path
         }
 
 def rotate_page(file_path, page_number, direction, angle):
