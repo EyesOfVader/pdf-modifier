@@ -6,26 +6,18 @@ from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
 
-from widgets import FileTable, FilePicker
+from widgets import *
 
 class Main(QMainWindow):
 
     def __init__(self, parent=None):
         super(Main, self).__init__(parent)
         # Check if we have a value stored for previous window size. If not, use default
-        self.setGeometry(QRect(500, 500, 1030, 600))
+        self.setGeometry(QRect(200, 200, 400, 200))
         self.setWindowTitle("PDF Modifier")
-        container = QWidget()
-        self.setCentralWidget(container)
-        layout = QVBoxLayout()
-        container.setLayout(layout)
-        top_bar = QHBoxLayout()
-        file_picker = FilePicker()
-        top_bar.addWidget(file_picker)
-        layout.addLayout(top_bar)
-        file_table = FileTable()
-        file_picker.files_selected.connect(file_table.add_row)
-        layout.addWidget(file_table)
+        tabs = QTabWidget()
+        self.setCentralWidget(tabs)
+        tabs.addTab(MergeWidget(), "Merge")
         self.center()
         self.show()
 
