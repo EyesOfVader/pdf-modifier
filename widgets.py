@@ -1,10 +1,11 @@
 from os.path import expanduser
+from abc import abstractmethod
 
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
 
-from pdf_modifier import read_pdf_info
+from pdf_modifier import *
 
 
 class FileTable(QTableWidget):
@@ -28,7 +29,6 @@ class FileTable(QTableWidget):
     def dropEvent(self, event: QDropEvent):
         if not event.isAccepted() and event.source() == self:
             drop_row = self.drop_on(event)
-
             rows = sorted(set(item.row() for item in self.selectedItems()))
             rows_to_move = [[QTableWidgetItem(self.item(row_index, column_index)) for column_index in range(self.columnCount())]
                             for row_index in rows]
@@ -65,7 +65,7 @@ class FileTable(QTableWidget):
         # noinspection PyTypeChecker
         return rect.contains(pos, True) and not (int(self.model().flags(index)) & Qt.ItemIsDropEnabled) and pos.y() >= rect.center().y()
 
-    
+
     @pyqtSlot(list)
     def add_row(self, files):
         for f in files:
@@ -80,59 +80,121 @@ class FilePicker(QPushButton):
 
     files_selected = pyqtSignal(list)
     
-    def __init__(self, text, filter):
+    def __init__(self, text):
         super(FilePicker, self).__init__(text)
-        self.filter = filter
         self.clicked.connect(self.select_files)
     
     def select_files(self, event):
-        file_names = QFileDialog.getOpenFileNames(self, filter=self.filter)[0]
+        file_names = QFileDialog.getOpenFileNames(self, filter="pdf Files (*.pdf)")[0]
         self.files_selected.emit(file_names)
 
 
-class FolderPicker(QPushButton):
-
-    folder_selected = pyqtSignal(str)
+class FolderPicker(QLineEdit):
     
-    def __init__(self, text):
+    def __init__(self, text=expanduser('~')):
         super(FolderPicker, self).__init__(text)
-        self.clicked.connect(self.select_files)
     
-    def select_files(self, event):
+    def mousePressEvent(self, event):
         folder = str(QFileDialog.getExistingDirectory(self, "Select Directory"))
-        print(folder)
-        self.folder_selected.emit(folder)
-    
-
-class PDFPushButton(QPushButton):
-    
-    def __init__(self, *args, **kwargs):
-        super(PDFPushButton, self).__init__(*args, **kwargs)
-        self.setFixedHeight(100)
-        self.setFixedWidth(100)
+        if folder:
+            self.setText(folder)
 
 
 class ToolWidget(QWidget):
-        
-    def __init__(self, *args, **kwargs):
-        super(ToolWidget, self).__init__(*args, **kwargs)
+
+    def __init__(self, parent=None):
+        super(ToolWidget, self).__init__(parent=parent)
         self.layout = QVBoxLayout()
         self.setLayout(self.layout)
         self.top_bar = QHBoxLayout()
+
+        self.folder_picker = FolderPicker()
+        self.top_bar.addWidget(QLabel("Output location: "))
+        self.top_bar.addWidget(self.folder_picker)
+        add_button = FilePicker("+")
+        merge_button = QPushButton("Merge")
+        merge_button.clicked.connect(self.merge_files)
+        split_button = QPushButton("Split")
+        split_button.clicked.connect(self.split_files)
+        rotate_button = QPushButton("Rotate Pages")
+        rotate_button.clicked.connect(self.rotate_pages)
+        self.top_bar.addWidget(add_button)
+        self.top_bar.addWidget(merge_button)
+        self.top_bar.addWidget(split_button)
+        self.top_bar.addWidget(rotate_button)
         self.layout.addLayout(self.top_bar)
 
+        self.file_table = FileTable()
+        self.layout.addWidget(self.file_table)
+        add_button.files_selected.connect(self.file_table.add_row)
 
-class MergeWidget(ToolWidget):
+        self.error_dialog = QMessageBox(self)
+        self.error_dialog.setIcon(QMessageBox.Critical)
+        self.error_dialog.setWindowTitle("Error")
     
-    def __init__(self, *args, **kwargs):
-        super(MergeWidget, self).__init__(*args, **kwargs)
-        fp = FilePicker("Load Files", "pdf Files (*.pdf)")
-        ft = FileTable()
-        fp.files_selected.connect(ft.add_row)
-        output_location = QLineEdit(expanduser('~'))
-        output_selector = FolderPicker('..')
-        self.top_bar.addWidget(fp)
-        self.top_bar.addWidget(QLabel("Output location: "))
-        self.top_bar.addWidget(output_location)
-        self.top_bar.addWidget(output_selector)
-        self.layout.addWidget(ft)
+    def get_file_paths(self):
+        selected_rows = list(set([x.row() for x in self.file_table.selectedItems()]))
+        return [self.file_table.item(row, 4).text() for row in selected_rows]
+
+    def merge_files(self):
+        if len(self.get_file_paths()) > 1:
+            merge_pdfs(self.get_file_paths(), f"{self.folder_picker.text()}/output.pdf")
+        else:
+            self.error_dialog.setText("Please select more than one document to merge")
+            self.error_dialog.exec_()
+    
+    def split_files(self):
+        if len(self.get_file_paths()):
+            for path in self.get_file_paths():
+                split_pdf(path, self.folder_picker.text())
+        else:
+            self.error_dialog.setText("Please select a document to split")
+            self.error_dialog.exec_()
+    
+    def rotate_pages(self):
+        if len(self.get_file_paths()) == 1:
+            pages = int(self.file_table.selectedItems()[3].text())
+            res = RotateDialog(page_count=pages, parent=self)
+            if res.exec_():
+                page_number, direction = res.get_values()
+                rotate_page(self.get_file_paths()[0], page_number, direction, self.folder_picker.text())
+        else:
+            self.error_dialog.setText("Please select a single document")
+            self.error_dialog.exec_()
+
+
+class RotateDialog(QDialog):
+
+    def __init__(self, *, page_count, parent=None):
+        super(RotateDialog, self).__init__(parent=parent)
+        self.setModal(True)
+        self.setWindowTitle("Split Pages")
+        self.layout = QVBoxLayout()
+        self.setLayout(self.layout)
+
+        form = QFormLayout()
+        self.page_select = QSpinBox()
+        self.page_select.setMaximum(page_count)
+        self.page_select.setMinimum(1)
+        clockwise = QRadioButton("clockwise")
+        clockwise.setChecked(True)
+        anti = QRadioButton("anti-clockwise")
+        self.direction_group = QButtonGroup()
+        self.direction_group.addButton(clockwise)
+        self.direction_group.addButton(anti)
+        direction_layout = QHBoxLayout()
+        direction_layout.addWidget(clockwise)
+        direction_layout.addWidget(anti)
+        form.addRow("Page Number", self.page_select)
+        form.addRow("Direction", direction_layout)
+
+        QBtn = QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        self.buttonBox = QDialogButtonBox(QBtn)
+        self.buttonBox.accepted.connect(self.accept)
+        self.buttonBox.rejected.connect(self.reject)
+        self.layout.addLayout(form)
+        self.layout.addWidget(self.buttonBox)
+    
+    def get_values(self):
+        return self.page_select.value(), self.direction_group.checkedButton().text()
+        

@@ -12,12 +12,9 @@ class Main(QMainWindow):
 
     def __init__(self, parent=None):
         super(Main, self).__init__(parent)
-        # Check if we have a value stored for previous window size. If not, use default
-        self.setGeometry(QRect(200, 200, 400, 200))
         self.setWindowTitle("PDF Modifier")
-        tabs = QTabWidget()
-        self.setCentralWidget(tabs)
-        tabs.addTab(MergeWidget(), "Merge")
+        self.setCentralWidget(ToolWidget())
+        self.resize(QDesktopWidget().availableGeometry().size() * 0.7)
         self.center()
         self.show()
 
